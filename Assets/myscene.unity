@@ -240,8 +240,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bd4a3f9144a279046880e3cf1335cc23, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  a: 0
-  myGUITexture: {fileID: 0}
 --- !u!1 &1130633338
 GameObject:
   m_ObjectHideFlags: 0

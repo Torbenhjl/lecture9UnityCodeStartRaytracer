@@ -28,26 +28,55 @@ Shader "Unlit/SingleColor"
 	{
 		float2 uv : TEXCOORD0;
 		float4 vertex : SV_POSITION;
+		float3 rayDir : TEXCOORD1;
 	};
+
+	// camera setup
+	float3 camOrigin = float3(0.0,0.0,0.0);
+	vec3 sphereCenter = vec3(0.0,0.0,-1.0);
+	float3 sphereRadius = 0.5;
 	
 	v2f vert(appdata v)
 	{
 		v2f o;
 		o.vertex = UnityObjectToClipPos(v.vertex);
 		o.uv = v.uv;
+
+		float aspectRatio = _ScreenParams.x / _ScreenParams.y;
+		float3 rayDir = normalize(float3((o.uv.x - 0.5) * 2.0 * aspectRatio, (o.uv.y - 0.5) * 2.0, -1.0));
+        o.rayDir = rayDir;
+
 		return o;
 	}
 	
-
+	  bool hitSphere(vec3 center, float radius, float3 rayOrigin, float3 rayDir)
+            {
+                vec3 oc = rayOrigin - center;
+                float a = dot(rayDir, rayDir);
+                float b = 2.0 * dot(oc, rayDir);
+                float c = dot(oc, oc) - (radius * radius);
+                float discriminant = b * b - 4.0 * a * c;
+                return (discriminant > 0);
+            }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 	fixed4 frag(v2f i) : SV_Target
 	{
+		if(hitSphere(vec3(0,0,-1), 0.5, camOrigin, i.rayDir)) 
+		{
+			return fixed4(1,0,0,0); //red
+		}
 		float x = i.uv.x;
 		float y = i.uv.y;
-		col3 col = col3(x,y,0);
 
-		return fixed4(col,1); 
+		float3 white = fixed3(1.0,1.0,1.0);
+		fixed3 blue = fixed3(0.5,0.7,1.0);
+
+	
+
+		col3 col = lerp(white,blue,y);
+
+		return fixed4(col,1.0); 
 	}
 ////////////////////////////////////////////////////////////////////////////////////
 
