@@ -9,11 +9,27 @@
 
 Shader "Unlit/SingleColor"
 {
+
+		Properties
+{
+// inputs from gui, NB remember to also define them in "redeclaring" section
+[Toggle] _boolchooser("myBool", Range(0,1)) = 0 // [Toggle] creates a checkbox in gui and gives it 0 or 1
+_floatchooser("myFloat", Range(-1,1)) = 0
+_colorchooser("myColor", Color) = (1,0,0,1)
+_vec4chooser("myVec4", Vector) = (0,0,0,0)
+}
 		SubShader{ Pass	{
 			
 	CGPROGRAM
 		#pragma vertex vert
 		#pragma fragment frag
+
+		int _boolchooser;
+float _floatchooser;
+float4 _colorchooser;// alternative use fixed4; range of –2.0 to +2.0 and 1/256th precision. (https://docs.unity3d.com/Manual/SL-
+//DataTypesAndPrecision.html)
+float4 _vec4chooser;
+//sampler2D _texturechooser
 
 		typedef vector <float, 3> vec3;  // to get more similar code to book
 		typedef vector <fixed, 3> col3;
@@ -203,7 +219,7 @@ Shader "Unlit/SingleColor"
 
 		ray r = cam.get_ray(u,v);
 
-		return fixed4(trace(r), 1.0);
+		return fixed4(trace(r) * _colorchooser, 1.0);
 	}
 ////////////////////////////////////////////////////////////////////////////////////
 

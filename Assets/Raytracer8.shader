@@ -1,5 +1,14 @@
 ﻿﻿Shader "Unlit/SingleColor"
 {
+
+	Properties
+{
+// inputs from gui, NB remember to also define them in "redeclaring" section
+[Toggle] _boolchooser("myBool", Range(0,1)) = 0 // [Toggle] creates a checkbox in gui and gives it 0 or 1
+_floatchooser("myFloat", Range(-1,1)) = 0
+_colorchooser("myColor", Color) = (1,0,0,1)
+_vec4chooser("myVec4", Vector) = (0,0,0,0)
+}
 	SubShader
 	{
 		Pass
@@ -7,6 +16,14 @@
 			CGPROGRAM
 			#pragma vertex vert
 			#pragma fragment frag
+
+			// redeclaring gui inputs
+			int _boolchooser;
+			float _floatchooser;
+			float4 _colorchooser;// alternative use fixed4; range of –2.0 to +2.0 and 1/256th precision. (https://docs.unity3d.com/Manual/SL-
+			//DataTypesAndPrecision.html)
+			float4 _vec4chooser;
+			//sampler2D _texturechooser
 
 			typedef vector <float, 3> vec3;  // to get more similar code to book
 			typedef vector <float, 2> vec2;
@@ -33,7 +50,8 @@
 				return o;
 			}
 
-			static const uint NUMBER_OF_SAMPLES = 20;
+			static const uint NUMBER_OF_SAMPLES = 30;
+			static const uint MAXIMUM_DEPTH = 10;
 
 			static float rand_seed = 0.0;
 			static float2 rand_uv = float2(0.0, 0.0);
@@ -51,17 +69,27 @@
 				return random;
 			}
 
+			vec3 random_in_unit_sphere() {
+						vec3 p;
+						do {
+							p = 2.0 * vec3(random_number(), random_number(), random_number()) - vec3(1.0, 1.0, 1.0);
+						} while (dot(p, p) >= 1.0); // Ensure it's inside a unit sphere
+						return p;
+}
+
 
 			struct hit_record {
 				float t;
 				vec3 position;
 				vec3 normal;
+				uint index;
+				
 			};
 
 			struct ray
 			{
 				vec3 origin;
-				vec3 direction;
+				vec3 direction;	
 
 				static ray from(vec3 origin, vec3 direction) {
 					ray r;
@@ -97,21 +125,16 @@
 					return c;
 				}
 			};
+			
 
-			struct sphere
+		struct sphere
 			{
 				vec3 center;
 				float radius;
 
-				static sphere from(vec3 center, float radius) {
-					sphere s;
-					s.center = center;
-					s.radius = radius;
-
-					return s;
-				}
-
 				bool intersect(ray r, float t_min, float t_max, out hit_record record) {
+					record.index = 0;
+
 					vec3 oc = r.origin - center;
 					float a = dot(r.direction, r.direction);
 					float b = dot(oc, r.direction);
@@ -137,13 +160,36 @@
 					}
 					return false;
 				}
+
+				// material:
+				vec3 albedo;
+				bool isMetal;
+				float fuzz;
+
+				bool scatter(ray r, hit_record record, out vec3 attenuation, out ray scattered) {
+					if (isMetal) {
+						vec3 reflected = reflect(normalize(r.direction), record.normal);
+						scattered = ray::from(record.position, reflected + fuzz * random_in_unit_sphere());
+						attenuation = albedo;
+						return (dot(scattered.direction, record.normal) > 0);
+					}
+					else {
+						vec3 target = record.position + record.normal + random_in_unit_sphere();
+						scattered = ray::from(record.position, target - record.position);
+						attenuation = albedo;
+						return true;
+					}
+				}
 			};
 
-			static const uint NUMBER_OF_SPHERES = 2;
-			static const sphere WORLD[NUMBER_OF_SPHERES] = {
-				{ vec3(0.0, 0.0, -1.0), 0.5 },
-				{ vec3(0.0, -100.5, -1.0), 100 }
-				
+		static const uint NUMBER_OF_SPHERES = 4;
+	
+
+		static const sphere WORLD[NUMBER_OF_SPHERES] = {
+				{ vec3(0.0, 0.0, -1.0), 0.5, vec3(0.8, 0.3, 0.3), false, 0.0 },
+				{ vec3(0.0, -100.5, -1.0), 100.0, vec3(0.8, 0.8, 0.0), false, 0.0 },
+				{ vec3(1.0, 0.0, -1.0), 0.5, vec3(0.8, 0.6, 0.2), true, 1.0 },
+				{ vec3(-1.0, 0.0, -1.0), 0.5, vec3(0.8, 0.8, 0.8), true, 0.3 }
 			};
 
 			bool intersect_world(ray r, float t_min, float t_max, out hit_record record) {
@@ -153,13 +199,17 @@
 
 				for (uint i = 0; i < NUMBER_OF_SPHERES; i++) {
 					sphere s = WORLD[i];
+					
+					
 					if (s.intersect(r, t_min, closest, temp_record)) {
 						intersected = true;
 						closest = temp_record.t;
 						record = temp_record;
+						record.index = i;
+						
 					}
 				}
-
+			
 				return intersected;
 			}
 
@@ -168,18 +218,41 @@
 				return lerp(vec3(1.0, 1.0, 1.0), vec3(0.5, 0.7, 1.0), t);
 			}
 
-			vec3 trace(ray r) {
+
+vec3 trace(ray r) {
 
 				vec3 color = vec3(1.0, 1.0, 1.0);
 
 				hit_record record;
-				if (intersect_world(r, 0.001, 100000.0, record)) {
-					return 0.5 * vec3(record.normal.x + 1.0, record.normal.y + 1.0, record.normal.z + 1.0);
-				} else {
-					return color * background(r);
+
+				uint i = 0;
+				while ((i < MAXIMUM_DEPTH) && intersect_world(r, 0.001, 100000.0, record)) {
+
+					ray scattered;
+					vec3 attenuation;
+
+					WORLD[record.index].scatter(r, record, attenuation, scattered);
+
+					r = scattered;
+					color *= attenuation;
+
+					i += 1;
 				}
 
+				if (i == MAXIMUM_DEPTH) {
+					return vec3(0.0, 0.0, 0.0);
+				}
+				else {
+					return color * background(r);
+				}
 			}
+
+
+	vec3 reflect(vec3 v, vec3 n) {
+		return v - 2 * dot(v,n) * n;
+		}
+
+
 
 
 			fixed4 frag(v2f i) : SV_Target
@@ -189,8 +262,7 @@
 				float u = i.uv.x;
 				float v = i.uv.y;
 
-				// initialize random generator seed.
-				rand_seed = i.uv.x + i.uv.y;
+				rand_uv = i.uv;
 
 				col3 col = col3(0.0, 0.0, 0.0);
 
@@ -199,10 +271,12 @@
 					float dv = random_number() / _ScreenParams.y;
 
 					ray r = cam.get_ray(u + du, v + dv);
-					col += trace(r);
+					col += col3(trace(r));
 				}
 
 				col /= NUMBER_OF_SAMPLES;
+				
+				col = sqrt(col);
 
 				return fixed4(col, 1.0);
 			}

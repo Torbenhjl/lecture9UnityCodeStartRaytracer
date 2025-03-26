@@ -1,5 +1,14 @@
 ﻿﻿Shader "Unlit/SingleColor"
 {
+
+	Properties
+{
+// inputs from gui, NB remember to also define them in "redeclaring" section
+[Toggle] _boolchooser("myBool", Range(0,1)) = 0 // [Toggle] creates a checkbox in gui and gives it 0 or 1
+_floatchooser("myFloat", Range(-1,1)) = 0
+_colorchooser("myColor", Color) = (1,0,0,1)
+_vec4chooser("myVec4", Vector) = (0,0,0,0)
+}
 	SubShader
 	{
 		Pass
@@ -7,6 +16,14 @@
 			CGPROGRAM
 			#pragma vertex vert
 			#pragma fragment frag
+
+			// redeclaring gui inputs
+int _boolchooser;
+float _floatchooser;
+float4 _colorchooser;// alternative use fixed4; range of –2.0 to +2.0 and 1/256th precision. (https://docs.unity3d.com/Manual/SL-
+//DataTypesAndPrecision.html)
+float4 _vec4chooser;
+//sampler2D _texturechooser
 
 			typedef vector <float, 3> vec3;  // to get more similar code to book
 			typedef vector <float, 2> vec2;
@@ -50,6 +67,14 @@
 
 				return random;
 			}
+
+			vec3 random_in_unit_sphere() {
+    vec3 p;
+    do {
+        p = 2.0 * vec3(random_number(), random_number(), random_number()) - vec3(1.0, 1.0, 1.0);
+    } while (dot(p, p) >= 1.0); // Ensure it's inside a unit sphere
+    return p;
+}
 
 
 			struct hit_record {
@@ -168,19 +193,26 @@
 				return lerp(vec3(1.0, 1.0, 1.0), vec3(0.5, 0.7, 1.0), t);
 			}
 
-			vec3 trace(ray r) {
+	vec3 trace(ray r) {
 
-				vec3 color = vec3(1.0, 1.0, 1.0);
+		 vec3 color = vec3(1.0, 1.0, 1.0);
+    
+    for (int bounce = 0; bounce < 10; bounce++) { 
+        hit_record record;
 
-				hit_record record;
-				if (intersect_world(r, 0.001, 100000.0, record)) {
-					return 0.5 * vec3(record.normal.x + 1.0, record.normal.y + 1.0, record.normal.z + 1.0);
-				} else {
-					return color * background(r);
-				}
+        if (intersect_world(r, 0.001, 100000.0, record)) {
+            vec3 target = record.position + record.normal + random_in_unit_sphere();
+            r = ray::from(record.position, target - record.position); 
 
-			}
-
+            color *= 0.5; 
+        } else {
+            color *= background(r);
+            break; 
+        }
+    }
+    
+    return color;
+}
 
 			fixed4 frag(v2f i) : SV_Target
 			{
@@ -204,7 +236,7 @@
 
 				col /= NUMBER_OF_SAMPLES;
 
-				return fixed4(col, 1.0);
+				return fixed4(col * _colorchooser.rgb, 1.0);
 			}
 			
 			ENDCG
