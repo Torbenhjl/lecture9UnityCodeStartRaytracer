@@ -105,6 +105,8 @@ _vec4chooser("myVec4", Vector) = (0,0,0,0)
 			};
 
 			struct camera {
+				
+
 				vec3 origin;
 				vec3 horizontal;
 				vec3 vertical;
@@ -127,10 +129,34 @@ _vec4chooser("myVec4", Vector) = (0,0,0,0)
 			};
 			
 
+	bool refract(vec3 v, vec3 n, float3 ni_over_nt, out vec3 refracted)
+	{
+		vec3 uv = normalize(v);
+		float dt = dot(uv, n);
+		float discriminant = 1.0 - ni_over_nt * ni_over_nt * (1 - dt * dt);
+		if(discriminant > 0) {
+			refracted = ni_over_nt * (uv - n * dt) - n * sqrt(discriminant);
+			return true;
+			} else {
+				return false;
+				}
+		}
+
+		float schlick(float cosine, float ref_idx) {
+			float r0 = (1-ref_idx) / (1 + ref_idx);
+			r0 = r0 * r0;
+			return r0 + (1 - r0) * pow((1- cosine), 5);
+			}
+
 		struct sphere
 			{
 				vec3 center;
 				float radius;
+				// material:
+				vec3 albedo;
+				bool isMetal;
+				bool dialectric;
+				float fuzz;
 
 				bool intersect(ray r, float t_min, float t_max, out hit_record record) {
 					record.index = 0;
@@ -161,10 +187,7 @@ _vec4chooser("myVec4", Vector) = (0,0,0,0)
 					return false;
 				}
 
-				// material:
-				vec3 albedo;
-				bool isMetal;
-				float fuzz;
+				
 
 				bool scatter(ray r_in, hit_record record, out vec3 attenuation, out ray scattered) {
 					if (isMetal) {
@@ -172,7 +195,49 @@ _vec4chooser("myVec4", Vector) = (0,0,0,0)
 						scattered = ray::from(record.position, reflected + fuzz * random_in_unit_sphere());
 						attenuation = albedo;
 						return (dot(scattered.direction, record.normal) > 0);
+
+					} 
+					else if (dialectric) {
+						vec3 outwardNormal;
+						vec3 reflected = reflect(normalize(r_in.direction), record.normal);
+						float ni_over_nt;
+						attenuation = vec3(1.0, 1.0, 1.0); // glass does not absorb light
+						vec3 refracted;
+						float cosine;
+						float reflect_prob;
+
+						float dotDirNorm = dot(r_in.direction, record.normal);
+
+						// Assume fuzz holds the refractive index for dielectrics
+						float ref_idx = fuzz;
+
+						if (dotDirNorm > 0.0) {
+							outwardNormal = -record.normal;
+							ni_over_nt = ref_idx;
+							cosine = ref_idx * dotDirNorm / length(r_in.direction);
+						} else {
+							outwardNormal = record.normal;
+							ni_over_nt = 1.0 / ref_idx;
+							cosine = -dotDirNorm / length(r_in.direction);
+						}
+
+						bool canRefract = refract(r_in.direction, outwardNormal, ni_over_nt, refracted);
+
+						if (canRefract) {
+							reflect_prob = schlick(cosine, ref_idx);
+						} else {
+							reflect_prob = 1.0;
+						}
+
+						if (random_number() < reflect_prob) {
+							scattered = ray::from(record.position, reflected);
+						} else {
+							scattered = ray::from(record.position, refracted);
+						}
+
+						return true;
 					}
+
 					else {
 						vec3 target = record.position + record.normal + random_in_unit_sphere();
 						scattered = ray::from(record.position, target - record.position);
@@ -182,15 +247,17 @@ _vec4chooser("myVec4", Vector) = (0,0,0,0)
 				}
 			};
 
-		static const uint NUMBER_OF_SPHERES = 4;
+		static const uint NUMBER_OF_SPHERES = 5;
 	
 
-		static const sphere WORLD[NUMBER_OF_SPHERES] = {
-				{ vec3(0.0, 0.0, -1.0), 0.5, vec3(0.8, 0.3, 0.3), false, 0.0 },
-				{ vec3(0.0, -100.5, -1.0), 100.0, vec3(0.8, 0.8, 0.0), false, 0.0 },
-				{ vec3(1.0, 0.0, -1.0), 0.5, vec3(0.8, 0.6, 0.2), true, 1.0 },
-				{ vec3(-1.0, 0.0, -1.0), 0.5, vec3(0.8, 0.8, 0.8), true, 0.3 }
-			};
+	static const sphere WORLD[NUMBER_OF_SPHERES] = {
+    { vec3(0.0, 0.0, -1.0), 0.5, vec3(0.1, 0.2, 0.5), false, false, 0.0 },  // Lambertian
+    { vec3(0.0, -100.5, -1.0), 100.0, vec3(0.8, 0.8, 0.0), false, false, 0.0 },  // Ground Lambertian
+    { vec3(1.0, 0.0, -1.0), 0.5, vec3(0.8, 0.6, 0.2), true, false, 0.0 },   // Metal
+    { vec3(-1.0, 0.0, -1.0), 0.5, vec3(1.0, 1.0, 1.0), false, true, 1.5 },
+	{ vec3(-1.0, 0.0, -1.0), -0.45, vec3(1.0, 1.0, 1.0), false, true, 1.5 } // Dielectric (ref_idx = 1.5)
+};
+
 
 			bool intersect_world(ray r, float t_min, float t_max, out hit_record record) {
 				hit_record temp_record;
